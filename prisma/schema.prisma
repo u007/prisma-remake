@@ -1,0 +1,55 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+datasource db {
+  provider = "sqlite"
+  url      = "sqlite3:../database.sqlite"
+}
+
+model User {
+  id        Int      @id @default(autoincrement())
+  name      String
+  email     String   @unique
+  createdAt DateTime @default(now())
+  posts     Post[]
+  profile   Profile?
+  address   Address?
+
+  @@index([name, email])
+}
+
+model Address {
+  id      Int    @id @default(autoincrement())
+  street  String
+  city    String
+  state   String
+  country String
+  zipCode String
+  user    User   @relation(fields: [userId], references: [id])
+  userId  Int    @unique
+}
+
+model Post {
+  id        Int      @id @default(autoincrement())
+  title     String
+  content   String?
+  published Boolean  @default(false)
+  author    User     @relation(fields: [authorId], references: [id])
+  authorId  Int
+  tags      Tag[]
+
+  @@unique([title, authorId])
+}
+
+model Profile {
+  id     Int    @id @default(autoincrement())
+  bio    String
+  user   User   @relation(fields: [userId], references: [id])
+  userId Int    @unique
+}
+
+model Tag {
+  id    Int    @id @default(autoincrement())
+  name  String @unique
+  posts Post[]
+}

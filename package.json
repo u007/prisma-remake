@@ -1,0 +1,35 @@
+{
+  "name": "nodejs-trpc-server",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "start": "node --experimental-specifier-resolution=node --loader ts-node/esm src/server.ts",
+    "dev": "nodemon --experimental-specifier-resolution=node --exec node --loader ts-node/esm src/server.ts",
+    "generate-types": "node --experimental-specifier-resolution=node --loader ts-node/esm --require tsconfig-paths/register -r source-map-support/register scripts/generateTypes.ts",
+    "test": "node --experimental-specifier-resolution=node --loader ts-node/esm src/db/test-orm.ts",
+    "build": "tsc",
+    "seed": "node --experimental-specifier-resolution=node --loader ts-node/esm src/db/seed.ts",
+    "db:push": "bun scripts/dbPush.ts"
+  },
+  "dependencies": {
+    "@trpc/server": "^10.45.2",
+    "express": "^4.21.1",
+    "jsonwebtoken": "^9.0.2",
+    "sqlite": "^5.1.1",
+    "sqlite3": "^5.1.7",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/bcryptjs": "^2.4.6",
+    "@types/express": "^5.0.0",
+    "@types/jsonwebtoken": "^9.0.7",
+    "@types/node": "^22.7.7",
+    "nodemon": "^3.1.7",
+    "source-map-support": "^0.5.21",
+    "ts-node": "^10.9.2",
+    "tsconfig-paths": "^4.2.0",
+    "typescript": "^5.6.3",
+    "@types/bun": "latest"
+  },
+  "module": "index.ts"
+}
