@@ -85,9 +85,6 @@ async function generateTableSchema(
 							schemaEnumContent,
 						);
 						let fieldDef = `"${field.name}" ${sqliteType}`;
-						if (field.type === "String" && field.isId) {
-							fieldDef += " PRIMARY KEY";
-						}
 
 						return fieldDef;
 					})
@@ -119,18 +116,20 @@ async function generateTableSchema(
 					}
 					return constraints.join(", ");
 				})();
+				const primaryDDL = tableSchema.idFields?.length >= 0 ? `PRIMARY KEY (${tableSchema.idFields.join(", ")})`: '';
 				console.log("createTableFields", tableSchema.name, {
 					createTableFields,
 					contraints,
+					primaryDDL,
 				});
 				await db.exec(
-					`CREATE TABLE IF NOT EXISTS "${tableSchema.name}" (${createTableFields} ${contraints ? `, ${contraints}` : ""})`,
+					`CREATE TABLE IF NOT EXISTS "${tableSchema.name}" (${createTableFields} ${primaryDDL ? `, ${primaryDDL}`: ''}${contraints ? `, ${contraints}` : ""})`,
 				);
 
 				continue
 				// IS CREATE TABLE
-			}
 
+			}
 			// is ALTER TABLE
 			// Get current columns
 			const columnsResult = await db.all<ColumnInfo>(
@@ -213,10 +212,33 @@ async function generateTableSchema(
 				}
 			}
 
+			// check if existing id fields are same
+			const existingIdFields = currentColumns.filter((col: ColumnInfo) => col.name === 'id');
+			const existingIdFieldsNames: string[] = existingIdFields.map((col: ColumnInfo) => col.name);
+			console.log("currentColumns", {existingIdFieldsNames, idFields: tableSchema.idFields});
+	
+			if (existingIdFieldsNames.length > 0) {
+				// If id field exists but doesn't match schema, need recreation
+				if (!tableSchema.idFields || !tableSchema.idFields.some(id => existingIdFieldsNames.includes(id.name))) {
+					console.log('needRereate id mismatch');
+					needRereate = true;
+					await alterTableAddPrimaryKey(
+						db,
+						tableSchema.name,
+						tableSchema.idFields,
+					);
+				}
+			} else if (tableSchema.idFields?.length) {
+				await alterTableAddPrimaryKey(
+					db,
+					tableSchema.name,
+					tableSchema.idFields[0].name,
+				);
+			}
 			// Handle foreign keys
 			for (const field of tableSchema.fields) {
 				// Check if field is a relation field (not array type)
-				if (field.type.endsWith("[]")) continue;
+				if (field.isArray) continue;
 
 				if (field.relation) {
 					const fkName = `fk_${tableSchema.name}_${field.name}`;
@@ -321,6 +343,55 @@ function canConvertType(fromType: string, toType: string): boolean {
 
 	const conversionKey = `${fromType.toUpperCase()}:${toType.toUpperCase()}`;
 	return safeConversions.get(conversionKey) ?? false;
+}
+
+async function alterTableAddPrimaryKey(
+	db: any,
+	tableName: string,
+	columnNames: string[],
+): Promise<string> {
+	const tempTableName = `${tableName}_temp`;
+	
+	// Get existing table schema
+	const tableInfo = await db.get(
+		`SELECT sql FROM sqlite_master WHERE type='table' AND name=?`,
+		[tableName]
+	);
+	
+	// Create temp table with same schema as original
+	const createTempTableSQL = tableInfo.sql.replace(
+		new RegExp(`"?${tableName}"?`, 'g'),
+		`"${tempTableName}"`
+	);
+	const createSQL = `${tableInfo.sql.replace(/,?\s+PRIMARY\s+KEY(\s*\([^)]+)?/gi, `, PRIMARY KEY (${columnNames.join(', ')}`)}`	
+	const sql = `
+		PRAGMA foreign_keys=off;
+		
+		BEGIN TRANSACTION;
+		
+		-- Create temp table with existing schema
+		${createTempTableSQL};
+		
+		-- Copy data
+		INSERT INTO ${tempTableName} SELECT * FROM ${tableName};
+		
+		-- Drop original
+		DROP TABLE ${tableName};
+		
+		-- Create new table with primary key
+		${createSQL};
+		
+		-- Copy data back
+		INSERT INTO ${tableName} SELECT * FROM ${tempTableName};
+		DROP TABLE ${tempTableName};
+		
+		COMMIT;
+		
+		PRAGMA foreign_keys=on;
+	`;
+
+	console.log('changing/adding primary field', tableName, sql);
+	return await db.exec(sql);
 }
 
 async function alterTableAddForeignKey(
