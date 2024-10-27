@@ -150,7 +150,18 @@
         "type": "User",
         "isUnique": false,
         "isObjectId": false,
-        "isEnum": false
+        "isEnum": false,
+        "relation": {
+          "name": "User",
+          "fields": [
+            "userId"
+          ],
+          "references": [
+            "id"
+          ],
+          "onDelete": "Cascade",
+          "onUpdate": "Cascade"
+        }
       }
     ],
     "uniqueConstraints": [],
@@ -206,14 +217,25 @@
       },
       {
         "name": "author",
-        "type": "User",
+        "type": "User?",
         "isUnique": false,
         "isObjectId": false,
-        "isEnum": false
+        "isEnum": false,
+        "relation": {
+          "name": "User?",
+          "fields": [
+            "authorId"
+          ],
+          "references": [
+            "id"
+          ],
+          "onDelete": "NoAction",
+          "onUpdate": "SetNull"
+        }
       },
       {
         "name": "authorId",
-        "type": "String",
+        "type": "String?",
         "isUnique": false,
         "isObjectId": false,
         "isEnum": false
@@ -275,7 +297,18 @@
         "type": "User",
         "isUnique": false,
         "isObjectId": false,
-        "isEnum": false
+        "isEnum": false,
+        "relation": {
+          "name": "User",
+          "fields": [
+            "userId"
+          ],
+          "references": [
+            "id"
+          ],
+          "onDelete": "Cascade",
+          "onUpdate": "SetDefault"
+        }
       },
       {
         "name": "userId",

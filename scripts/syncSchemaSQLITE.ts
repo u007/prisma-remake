@@ -18,6 +18,14 @@ interface IndexInfo {
 
 const DB_DEBUG = process.env.DB_DEBUG === "true";
 
+const DB_REFERENTIAL_ACTION_MAP = {
+	Cascade: "CASCADE",
+	SetNull: "SET NULL",
+	SetDefault: "SET DEFAULT",
+	Restrict: "RESTRICT",
+	NoAction: "NO ACTION",
+};
+
 async function generateTableSchema(
 	schemaPath: string,
 	enumSchemaPath: string,
@@ -86,14 +94,30 @@ async function generateTableSchema(
 				for (const field of tableSchema.fields) {
 					if (schemaTypes.includes(field.type)) {
 						const fkName = `fk_${tableSchema.name}_${field.name}`;
-						const referencedTable = field.type;
-						const fkDefinition = `FOREIGN KEY ("${field.name}Id") REFERENCES "${referencedTable}" ("id")`;
+						const referencedTable = field.relation.name;
+						let fkDefinition = `FOREIGN KEY ("${field.relation.fields.join('", "')}") REFERENCES "${referencedTable}" ("${field.relation.references.join('", "')}")`;
+
+						if (field.relation) {
+							if (field.relation.onDelete) {
+								fkDefinition += ` ON DELETE ${DB_REFERENTIAL_ACTION_MAP[field.relation.onDelete]}`;
+							}
+							if (
+								field.relation.onUpdate &&
+								field.relation.onUpdate !== "NoAction"
+							) {
+								fkDefinition += ` ON UPDATE ${DB_REFERENTIAL_ACTION_MAP[field.relation.onUpdate]}`;
+							}
+						}
+
 						constraints.push(fkDefinition);
 					}
 				}
 				return constraints.join(", ");
-			})()
-			console.log("createTableFields", tableSchema.name, createTableFields, contraints);
+			})();
+			console.log("createTableFields", tableSchema.name, {
+				createTableFields,
+				contraints,
+			});
 			await db.exec(
 				`CREATE TABLE IF NOT EXISTS "${tableSchema.name}" (${createTableFields} ${contraints ? `, ${contraints}` : ""})`,
 			);
@@ -123,7 +147,7 @@ async function generateTableSchema(
 					field.isEnum,
 					schemaEnumContent,
 				);
-			
+
 				if (!schemaTypes.includes(field.type)) {
 					continue;
 				}
@@ -174,25 +198,45 @@ async function generateTableSchema(
 				// Check if field is a relation field (not array type)
 				if (field.type.endsWith("[]")) continue;
 
-				if (schemaTypes.includes(field.type)) {
+				if (field.relation) {
 					const fkName = `fk_${tableSchema.name}_${field.name}`;
-					const referencedTable = field.type;
-					const fkDefinition = `FOREIGN KEY ("${field.name}Id") REFERENCES "${referencedTable}" ("id")`;
+					const referencedTable = field.relation.name.replace("?", "");
+					const fkDefinition = `FOREIGN KEY ("${field.relation.fields[0]}") REFERENCES "${referencedTable}" ("${field.relation.references[0]}")`;
 
 					// Check if foreign key exists
 					const fkExists = await db.get(
 						`SELECT COUNT(*) as count FROM pragma_foreign_key_list(?) 
-						WHERE "table" = ? AND "to" = "id" AND "table" = ?`,
-						[referencedTable, `${field.name}Id`, referencedTable]
+						WHERE "table" = ? AND "to" = ? AND "from" = ?`,
+						[
+							tableSchema.name,
+							referencedTable,
+							field.relation.references[0],
+							field.relation.fields[0],
+						],
 					);
-					console.log("Checking foreign key for table:", tableSchema.name);
-					console.log("Field name:", `${field.name}Id`);
-					console.log("Referenced table:", referencedTable);
 
-					console.log("fkExists", fkExists);
 					if (!fkExists?.count) {
-						needRereate = true;
-						console.warn(`Foreign key ${fkName} requires table recreation`);
+						// needRereate = true;
+						console.warn(
+							`Foreign key ${fkName} requires table recreation (${field.relation.fields[0]} -> ${referencedTable}.${field.relation.references[0]})`,
+						);
+						try {
+							// await db.exec(`ALTER TABLE "${tableSchema.name}" ADD ${fkDefinition}`);
+							addForeignKeyConstraint(
+								db,
+								tableSchema.name,
+								field.relation.fields.join(", "),
+								referencedTable,
+								field.relation.references.join(", "),
+							);
+							if (DB_DEBUG) console.log(`Added foreign key: ${fkName}`);
+						} catch (error) {
+							console.error(
+								`Failed to add foreign key ${fkName}: ${fkDefinition}`,
+								error,
+							);
+							throw error;
+						}
 					}
 				}
 			}
@@ -257,6 +301,72 @@ function canConvertType(fromType: string, toType: string): boolean {
 
 	const conversionKey = `${fromType.toUpperCase()}:${toType.toUpperCase()}`;
 	return safeConversions.get(conversionKey) ?? false;
+}
+
+function alterTableAddForeignKey(
+	tableName: string,
+	columnName: string,
+	referenceTable: string,
+	referenceColumn: string,
+	db: any,
+): string {
+	// SQLite doesn't support ALTER TABLE ADD CONSTRAINT directly
+	// We need to recreate the table with the foreign key
+	const tempTableName = `${tableName}_temp`;
+
+	return `
+		PRAGMA foreign_keys=off;
+		
+		BEGIN TRANSACTION;
+		
+		-- Create new temporary table with foreign key
+		CREATE TABLE ${tempTableName} AS SELECT * FROM ${tableName};
+		DROP TABLE ${tableName};
+		CREATE TABLE ${tableName} (
+			${columnName} INTEGER,
+			FOREIGN KEY (${columnName}) REFERENCES ${referenceTable}(${referenceColumn})
+		);
+		
+		-- Copy data from temporary table
+		INSERT INTO ${tableName} SELECT * FROM ${tempTableName};
+		DROP TABLE ${tempTableName};
+		
+		COMMIT;
+		
+		PRAGMA foreign_keys=on;
+	`;
+}
+
+function addForeignKeyConstraint(
+	db: any,
+	tableName: string,
+	columnName: string,
+	referenceTable: string,
+	referenceColumn: string,
+): void {
+	// Check if table has less than 10000 records
+	const countResult = db
+		.prepare(`SELECT COUNT(*) as count FROM ${tableName}`)
+		.get();
+	if (countResult.count >= 10000) {
+		throw new Error(
+			`Table ${tableName} has too many records (${countResult.count}) to drop and recreate. Maximum allowed is 10000.`,
+		);
+	}
+
+	const sql = alterTableAddForeignKey(
+		tableName,
+		columnName,
+		referenceTable,
+		referenceColumn,
+		db,
+	);
+
+	try {
+		db.exec(sql);
+	} catch (error: any) {
+		throw new Error(`Failed to add foreign key constraint: ${error.message}`);
+	}
 }
 
 export default generateTableSchema;

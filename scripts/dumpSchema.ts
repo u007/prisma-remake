@@ -6,6 +6,13 @@ interface Field {
   type: string;
   isUnique: boolean;
   isObjectId: boolean;
+  relation?: {
+    name: string;
+    fields: string[];
+    references: string[];
+    onDelete?: string;
+    onUpdate?: string;
+  };
 }
 
 interface UniqueConstraint {
@@ -84,6 +91,24 @@ const parseModels = (schema: string): SchemaOutput => {
             currentModel.idFields.push(name)
           }
           currentModel.fields.push({ name, type, isUnique, isObjectId, isEnum })
+        }
+
+        // Inside the field processing logic
+        const relationMatch = line.match(/@relation\(([^)]+)\)/)
+        if (relationMatch) {
+          const relationConfig = relationMatch[1]
+          const fields = relationConfig.match(/fields:\s*\[(.*?)\]/)?.[ 1].split(',').map(f => f.trim())
+          const references = relationConfig.match(/references:\s*\[(.*?)\]/)?.[ 1].split(',').map(f => f.trim())
+          const onDelete = relationConfig.match(/onDelete:\s*(.*?)(?:,|\s|$)/)?.[ 1]
+          const onUpdate = relationConfig.match(/onUpdate:\s*(.*?)(?:,|\s|$)/)?.[ 1]
+          
+          currentModel.fields[currentModel.fields.length - 1].relation = {
+            name: type,
+            fields: fields || [],
+            references: references || [],
+            onDelete,
+            onUpdate
+          }
         }
       }
 

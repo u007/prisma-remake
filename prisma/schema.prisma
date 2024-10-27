@@ -32,7 +32,7 @@ model Address {
   country String
   zipCode String
   userId  String
-  user    User   @relation(fields: [userId], references: [id])
+  user    User   @relation(fields: [userId], references: [id], onUpdate: Cascade, onDelete: Cascade)
 }
 
 model Post {
@@ -43,8 +43,8 @@ model Post {
   title     String
   content   String?
   published Boolean @default(false)
-  author    User    @relation(fields: [authorId], references: [id])
-  authorId  String
+  author    User?    @relation(fields: [authorId], references: [id], onUpdate: SetNull, onDelete: NoAction)
+  authorId  String?
   tags      Tag[]
 
   @@unique([title, authorId])
@@ -56,7 +56,7 @@ model Profile {
   updatedAt DateTime @updatedAt
 
   bio    String
-  user   User   @relation(fields: [userId], references: [id], onUpdate: Cascade, onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onUpdate: SetDefault, onDelete: Cascade)
   userId String    @unique
 }
 
