@@ -15,7 +15,7 @@ interface IndexInfo {
   indexdef: string;
 }
 
-async function generateTableSchema(schemaPath: string, enumSchemaPath: string) {
+async function syncTableSchema(schemaPath: string, enumSchemaPath: string) {
   const client = new Client({
     connectionString: process.env.DATABASE_URL,
   });
@@ -129,4 +129,4 @@ function canConvertType(fromType: string, toType: string): boolean {
   return safeConversions.has(conversionKey) && safeConversions.get(conversionKey);
 }
 
-export default generateTableSchema;
+export default syncTableSchema;

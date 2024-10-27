@@ -27,7 +27,7 @@ const DB_REFERENTIAL_ACTION_MAP = {
 	NoAction: "NO ACTION",
 };
 
-async function generateTableSchema(
+async function syncTableSchema(
 	schemaPath: string,
 	enumSchemaPath: string,
 	recreate = false,
@@ -84,9 +84,7 @@ async function generateTableSchema(
 							field.isEnum,
 							schemaEnumContent,
 						);
-						let fieldDef = `"${field.name}" ${sqliteType}`;
-
-						return fieldDef;
+						return `"${field.name}" ${sqliteType}`;
 					})
 					.join(", ");
 
@@ -116,7 +114,7 @@ async function generateTableSchema(
 					}
 					return constraints.join(", ");
 				})();
-				const primaryDDL = tableSchema.idFields?.length >= 0 ? `PRIMARY KEY (${tableSchema.idFields.join(", ")})`: '';
+				const primaryDDL = tableSchema.idFields?.length > 0 ? `PRIMARY KEY (${tableSchema.idFields.join(", ")})`: '';
 				console.log("createTableFields", tableSchema.name, {
 					createTableFields,
 					contraints,
@@ -215,13 +213,12 @@ async function generateTableSchema(
 			// check if existing id fields are same
 			const existingIdFields = currentColumns.filter((col: ColumnInfo) => col.name === 'id');
 			const existingIdFieldsNames: string[] = existingIdFields.map((col: ColumnInfo) => col.name);
-			console.log("currentColumns", {existingIdFieldsNames, idFields: tableSchema.idFields});
+			// console.log("currentColumns", {existingIdFieldsNames, idFields: tableSchema.idFields});
 	
 			if (existingIdFieldsNames.length > 0) {
 				// If id field exists but doesn't match schema, need recreation
-				if (!tableSchema.idFields || !tableSchema.idFields.some(id => existingIdFieldsNames.includes(id.name))) {
-					console.log('needRereate id mismatch');
-					needRereate = true;
+				if (!tableSchema.idFields || tableSchema.idFields.join(',') !== existingIdFieldsNames.join(',')) {
+					console.log('needRereate id mismatch', {new: tableSchema.idFields, old: existingIdFieldsNames } );
 					await alterTableAddPrimaryKey(
 						db,
 						tableSchema.name,
@@ -291,6 +288,7 @@ async function generateTableSchema(
 		await db.close();
 	}
 }
+
 function getSQLiteType(
 	prismaType: string,
 	isEnum: boolean,
@@ -351,6 +349,24 @@ async function alterTableAddPrimaryKey(
 	columnNames: string[],
 ): Promise<string> {
 	const tempTableName = `${tableName}_temp`;
+
+	const countResult = await db.get(`SELECT COUNT(*) as count FROM ${tableName}`);
+	if (countResult.count >= 10000) {
+		throw new Error(
+			`Table ${tableName} has too many records (${countResult.count}) to drop and recreate. Maximum allowed is 10000.`,
+		);
+	}
+
+	if (!promptYesToAll) {
+		const answer = prompt(
+			`Are you sure you want to add foreign key constraint to table ${tableName}? (y/n/A) `,
+		);
+		if (answer?.toLowerCase() === "a") {
+			promptYesToAll = true;
+		} else if (answer?.toLowerCase() !== "y") {
+			return '';
+		}
+	}
 	
 	// Get existing table schema
 	const tableInfo = await db.get(
@@ -484,12 +500,12 @@ async function addForeignKeyConstraint(
 	}
 }
 
-export default generateTableSchema;
+export default syncTableSchema;
 
 if (require.main === module) {
 	await dumpSchema();
 	const schemaPath = path.join(process.cwd(), "prisma", "schema.json");
 	const enumSchemaPath = path.join(process.cwd(), "prisma", "schema.enum.json");
 	const recreate = process.argv.includes("--force-reset");
-	generateTableSchema(schemaPath, enumSchemaPath, recreate);
+	syncTableSchema(schemaPath, enumSchemaPath, recreate);
 }
