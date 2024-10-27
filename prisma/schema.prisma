@@ -42,6 +42,7 @@ model Post {
 
   title     String
   content   String?
+  keywords String?
   published Boolean @default(false)
   author    User?    @relation(fields: [authorId], references: [id], onUpdate: SetNull, onDelete: NoAction)
   authorId  String?

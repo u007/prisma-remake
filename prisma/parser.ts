@@ -1,46 +1,59 @@
 import fs from "fs";
 
 export type SchemaJsonEnumType = {
-  schemaContent: {
+  name: string;
+  values: string[];
+}
+
+export type SchemaJsonIndexType = {
+  fields: string[];
+}
+
+export type SchemaJsonUniqueConstraintType = {
+  fields: string[];
+}
+
+export type SchemaJsonTableType = {
+  name: string;
+  fields: SchemaJsonFieldType[];
+  uniqueConstraints: SchemaJsonUniqueConstraintType[];
+  indexes: SchemaJsonIndexType[];
+  idFields: string[];
+}
+
+export type SchemaJsonFieldType = {
+  name: string;
+  type: string;
+  isUnique: boolean;
+  isObjectId: boolean;
+  isEnum: boolean;
+  isArray?: boolean;
+  isOptional?: boolean;
+  isRelation?: boolean;
+  relation?: {
     name: string;
-    fields: {
-      name: string;
-      type: string;
-      isUnique: boolean;
-      isObjectId: boolean;
-      isEnum: boolean;
-      isArray?: boolean;
-      isOptional?: boolean;
-      isRelation?: boolean;
-      relation?: {
-        name: string;
-        fields: string[];
-        references: string[];
-        onDelete: string;
-        onUpdate: string;
-      };
-    }[];
-    uniqueConstraints: { fields: string[] }[];
-    indexes: { fields: string[] }[];
-    idFields: string[];
-  }[];
-  schemaEnumContent: {
-    name: string;
-    values: string[];
-  }[];
-  schemaTypes: string[] 
+    fields: string[];
+    references: string[];
+    onDelete: string;
+    onUpdate: string;
+  };
+}
+export type SchemaJsonType = {
+  schema: SchemaJsonTableType[];
+  enums: SchemaJsonEnumType[];
+  tables: string[] 
 }
 
 export const parsePrismaSchemaJsons = (
 	schemaPath: string,
 	enumSchemaPath: string,
 	recreate = false,
-): SchemaJsonEnumType => {
+): SchemaJsonType => {
 	const schemaContent = JSON.parse(fs.readFileSync(schemaPath, "utf-8"));
 	const schemaEnumContent = JSON.parse(fs.readFileSync(enumSchemaPath, "utf-8"));
-  const schemaTypes = schemaContent.map((model: any) => model.name);
+  const schemaTypes = schemaContent.map((model: SchemaJsonTableType) => model.name);
 
-  const schemaResult: SchemaJsonEnumType["schemaContent"] = []
+  const schemaResult: SchemaJsonTableType[] = []
   for (const model of schemaContent) {
     const modelSchema = structuredClone(model)
     if (model.fields) {
@@ -55,11 +68,31 @@ export const parsePrismaSchemaJsons = (
         }
       }
     }
+
+    // if any field.isUnique but not uniqueConstraints, add it to uniqueConstraints
+    for (const field of modelSchema.fields) {
+      if (field.isUnique && !modelSchema.uniqueConstraints.some(constraint => constraint.fields?.length === 1 && constraint.fields[0] === field.name)) {
+        modelSchema.uniqueConstraints.push({
+          fields: [field.name],
+        })
+      }
+    }
+
+    // if any uniqueConstraints not in indexes, add it to indexes
+    for (const constraint of modelSchema.uniqueConstraints) {
+      if (!modelSchema.indexes.some(index => index.fields.length === constraint.fields.length && index.fields.every((field, index) => field === constraint.fields[index]))) {
+        modelSchema.indexes.push({
+          fields: constraint.fields,
+        })
+      }
+    }
     schemaResult.push(modelSchema)
   }
+
+
   return {
-    schemaContent: schemaResult,
-    schemaEnumContent,
-    schemaTypes,
+    schema: schemaResult,
+    enums: schemaEnumContent,
+    tables: schemaTypes,
   };
 }

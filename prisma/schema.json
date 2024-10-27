@@ -209,6 +209,13 @@
         "isEnum": false
       },
       {
+        "name": "keywords",
+        "type": "String?",
+        "isUnique": false,
+        "isObjectId": false,
+        "isEnum": false
+      },
+      {
         "name": "published",
         "type": "Boolean",
         "isUnique": false,
