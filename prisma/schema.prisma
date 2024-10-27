@@ -13,6 +13,7 @@ model User {
 
   name    String
   email   String   @unique
+  password  String
   posts   Post[]
   profile Profile?
   address Address[]
@@ -55,7 +56,7 @@ model Profile {
   updatedAt DateTime @updatedAt
 
   bio    String
-  user   User   @relation(fields: [userId], references: [id])
+  user   User   @relation(fields: [userId], references: [id], onUpdate: Cascade, onDelete: Cascade)
   userId String    @unique
 }
 

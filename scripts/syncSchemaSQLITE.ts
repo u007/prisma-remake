@@ -65,6 +65,7 @@ async function generateTableSchema(
 
 			// Create table if it doesn't exist
 			const createTableFields = tableSchema.fields
+				.filter((field) => !schemaTypes.includes(field.type))
 				.map((field) => {
 					const sqliteType = getSQLiteType(
 						field.type,
@@ -76,17 +77,25 @@ async function generateTableSchema(
 						fieldDef += " PRIMARY KEY";
 					}
 
-					if (schemaTypes.includes(field.type)) {
-						const fkName = `fk_${tableSchema.name}_${field.name}`;
-
-						fieldDef += ` CONSTRAINT "${fkName}" REFERENCES "${field.type}" ("${field.name}Id")`;
-					}
 					return fieldDef;
 				})
 				.join(", ");
-			console.log("createTableFields", createTableFields);
+
+			const contraints = (() => {
+				const constraints = [];
+				for (const field of tableSchema.fields) {
+					if (schemaTypes.includes(field.type)) {
+						const fkName = `fk_${tableSchema.name}_${field.name}`;
+						const referencedTable = field.type;
+						const fkDefinition = `FOREIGN KEY ("${field.name}Id") REFERENCES "${referencedTable}" ("id")`;
+						constraints.push(fkDefinition);
+					}
+				}
+				return constraints.join(", ");
+			})()
+			console.log("createTableFields", tableSchema.name, createTableFields, contraints);
 			await db.exec(
-				`CREATE TABLE IF NOT EXISTS "${tableSchema.name}" (${createTableFields})`,
+				`CREATE TABLE IF NOT EXISTS "${tableSchema.name}" (${createTableFields} ${contraints ? `, ${contraints}` : ""})`,
 			);
 			// Get current columns
 			const columnsResult = await db.all<ColumnInfo>(
@@ -114,7 +123,10 @@ async function generateTableSchema(
 					field.isEnum,
 					schemaEnumContent,
 				);
-
+			
+				if (!schemaTypes.includes(field.type)) {
+					continue;
+				}
 				if (!currentColumn) {
 					if (DB_DEBUG) console.log(`Adding missing column: ${field.name}`);
 					// Add missing column
@@ -145,7 +157,7 @@ async function generateTableSchema(
 					(idx: IndexInfo) => idx.name === indexName,
 				);
 
-				if (currentIndex && currentIndex.sql !== indexDefinition) {
+				if (currentIndex) {
 					if (DB_DEBUG) console.log(`Recreating index: ${indexName}`);
 					// Drop and recreate if different
 					await db.exec(`DROP INDEX IF EXISTS "${indexName}"`);
@@ -169,12 +181,16 @@ async function generateTableSchema(
 
 					// Check if foreign key exists
 					const fkExists = await db.get(
-						`SELECT 1 FROM sqlite_master 
-						WHERE type='table' AND name=? AND sql LIKE '%${fkDefinition}%'`,
-						[tableSchema.name],
+						`SELECT COUNT(*) as count FROM pragma_foreign_key_list(?) 
+						WHERE "table" = ? AND "to" = "id" AND "table" = ?`,
+						[referencedTable, `${field.name}Id`, referencedTable]
 					);
+					console.log("Checking foreign key for table:", tableSchema.name);
+					console.log("Field name:", `${field.name}Id`);
+					console.log("Referenced table:", referencedTable);
 
-					if (!fkExists) {
+					console.log("fkExists", fkExists);
+					if (!fkExists?.count) {
 						needRereate = true;
 						console.warn(`Foreign key ${fkName} requires table recreation`);
 					}

@@ -2,25 +2,33 @@ export type WhereClause<T> = Partial<T>;
 export type CreateData<T> = Omit<T, 'id'>;
 
 export type Include<T> = Record<keyof T, boolean>;
+export type DataQueryOptions<T> = QueryOptions<T> & {
+  data?: CreateData<T>;
+};
 export type QueryOptions<T> = {
   include?: Include<T>;
   orderBy?: Partial<Record<keyof T, 'asc' | 'desc'>>;
   take?: number;
   skip?: number;
+  where?: {
+    AND?: WhereClause<T>[];
+    OR?: WhereClause<T>[];
+    NOT?: WhereClause<T>;
+  } & WhereClause<T>;
 };
 export type ModelName = string;
-export type ModelType = Record<string, any>;
+export type ModelType = Record<string, unknown>;
 export type BaseORM = {
-  db: any;
+  db: unknown;
   extensions: Record<string, (...args: unknown[]) => unknown>;
   connected: boolean;
 
   createModelProxy<T extends ModelType>(modelName: ModelName): {
-    findFirst: (where: WhereClause<T>, options?: QueryOptions<T>) => Promise<T | null>;
-    findMany: (where?: WhereClause<T>, options?: QueryOptions<T>) => Promise<T[]>;
-    create: (data: CreateData<T>, options?: { include?: Include<T> }) => Promise<T>;
-    update: (where: { id: number }, data: Partial<T>) => Promise<{ affected: number }>;
-    delete: (where: { id: number }) => Promise<{ affected: number }>;
+    findFirst: (options: QueryOptions<T>) => Promise<T | null>;
+    findMany: (options?: QueryOptions<T>) => Promise<T[]>;
+    create: (options?: DataQueryOptions<T>) => Promise<T>;
+    update: (options: DataQueryOptions<T>) => Promise<T>;
+    delete: (options: QueryOptions<T>) => Promise<T>;
   };
 
   $connected(): boolean;
@@ -29,32 +37,27 @@ export type BaseORM = {
 
   findFirst<T>(
     tableName: string,
-    where: Record<string, unknown>,
-    options?: QueryOptions<T>,
+    options?: Omit<QueryOptions<T>, 'where'>,
   ): Promise<T | null>;
 
   findMany<T>(
     tableName: string,
-    where?: Record<string, unknown>,
-    options?: QueryOptions<T>,
+    options?: Omit<QueryOptions<T>, 'where'>,
   ): Promise<T[]>;
 
   create<T>(
     tableName: string,
-    data: Record<string, unknown>,
-    options?: { include?: Include<T> },
+    options?: DataQueryOptions<T>,
   ): Promise<T>;
 
-  update(
+  update<T>(
     tableName: string,
-    where: Record<string, unknown>,
-    data: Record<string, unknown>,
-  ): Promise<{ affected: number }>;
+    options?: DataQueryOptions<T>,
+  ): Promise<T>;
 
-  delete(
+  delete<T>(
     tableName: string,
-    where: Record<string, unknown>,
-  ): Promise<{ affected: number }>;
-
+    options?: QueryOptions<T>,
+  ): Promise<T>;
   $extends(extension: Record<string, (...args: unknown[]) => unknown>): BaseORM;
 };

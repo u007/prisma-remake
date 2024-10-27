@@ -1,6 +1,6 @@
 import sqlite3 from "sqlite3";
 import { Database as SQLiteDatabase, open } from "sqlite";
-import type { BaseORM, WhereClause, CreateData, Include, QueryOptions } from "./orm_base";
+import type { BaseORM, WhereClause, CreateData, Include, QueryOptions, ModelType, DataQueryOptions } from "./orm_base";
 import { connected } from "process";
 
 export type SQLiteORM = BaseORM & {
@@ -34,12 +34,57 @@ export function createSQLiteORM(): SQLiteORM {
     }
   }
 
-  function buildWhereClause(where: Record<string, unknown>): string {
-    return where && Object.keys(where).length > 0
-      ? `WHERE ${Object.keys(where).map(key => `${key} = ?`).join(" AND ")}`
-      : "";
-  }
+  function buildWhereClause(options?: QueryOptions<unknown>): { clause: string; values: unknown[] } {
+    if (!options?.where) return { clause: "", values: [] };
+    
+    const conditions: string[] = [];
+    const values: unknown[] = [];
 
+    // Handle basic where conditions
+    for (const [key, value] of Object.entries(options.where)) {
+      if (key !== 'AND' && key !== 'OR' && key !== 'NOT') {
+        conditions.push(`${key} = ?`);
+        values.push(value);
+      }
+    }
+
+    // Handle AND conditions
+    if (options.where.AND) {
+      for (const condition of options.where.AND) {
+        for (const [key, value] of Object.entries(condition)) {
+          conditions.push(`${key} = ?`);
+          values.push(value);
+        }
+      }
+    }
+
+    // Handle OR conditions
+    if (options.where.OR) {
+      const orConditions = options.where.OR.map(condition => {
+        const entries = Object.entries(condition);
+        for (const [, value] of entries) {
+          values.push(value);
+        }
+        return entries.map(([key]) => `${key} = ?`).join(" OR ");
+      });
+      if (orConditions.length) {
+        conditions.push(`(${orConditions.join(") OR (")})`);
+      }
+    }
+
+    // Handle NOT conditions
+    if (options.where.NOT) {
+      for (const [key, value] of Object.entries(options.where.NOT)) {
+        conditions.push(`NOT ${key} = ?`);
+        values.push(value);
+      }
+    }
+
+    return {
+      clause: conditions.length ? `WHERE ${conditions.join(" AND ")}` : "",
+      values
+    };
+  }
   async function fetchRelatedData<T>(
     data: Record<string, unknown>,
     include: Include<T>,
@@ -61,15 +106,13 @@ export function createSQLiteORM(): SQLiteORM {
 
   async function findFirst<T>(
     tableName: string,
-    where: Record<string, unknown>,
     options?: QueryOptions<T>
   ): Promise<T | null> {
     if (!connected) {
       await connect();
     }
-    const whereClause = buildWhereClause(where);
-    const values = Object.values(where);
-    const result = await sqliteDb.get(`SELECT * FROM ${tableName} ${whereClause}`, values);
+    const { clause, values } = buildWhereClause(options);
+    const result = await sqliteDb.get(`SELECT * FROM ${tableName} ${clause}`, values);
     
     if (result && options?.include) {
       await fetchRelatedData(result, options.include, tableName);
@@ -80,16 +123,13 @@ export function createSQLiteORM(): SQLiteORM {
 
   async function findMany<T>(
     tableName: string,
-    where?: Record<string, unknown>,
     options?: QueryOptions<T>
   ): Promise<T[]> {
     if (!connected) {
       await connect();
     }
-    const whereClause = buildWhereClause(where || {});
-    const values = where ? Object.values(where) : [];
-    console.log('sqliteDb', sqliteDb);
-    const results = await sqliteDb.all(`SELECT * FROM ${tableName} ${whereClause}`, values);
+    const { clause, values } = buildWhereClause(options);
+    const results = await sqliteDb.all(`SELECT * FROM ${tableName} ${clause}`, values);
 
     if (options?.include) {
       for (const result of results) {
@@ -102,12 +142,16 @@ export function createSQLiteORM(): SQLiteORM {
 
   async function create<T>(
     tableName: string,
-    data: Record<string, unknown>,
-    options?: { include?: Include<T> }
+    options?: DataQueryOptions<T>
   ): Promise<T> {
     if (!connected) {
       await connect();
     }
+    if (!options?.data) {
+      throw new Error("Create data must be provided in the where clause");
+    }
+    
+    const data = options.data;
     const columns = Object.keys(data).join(", ");
     const placeholders = Object.keys(data).map(() => "?").join(", ");
     const values = Object.values(data);
@@ -123,52 +167,56 @@ export function createSQLiteORM(): SQLiteORM {
     return (created || { id: result.lastID }) as T;
   }
 
-  async function update(
+  async function update<T>(
     tableName: string,
-    where: Record<string, unknown>,
-    data: Record<string, unknown>
-  ): Promise<{ affected: number }> {
+    options: DataQueryOptions<T>
+  ): Promise<T> {
     if (!connected) {
       await connect();
     }
-    const setClause = Object.keys(data).map((key) => `${key} = ?`).join(", ");
-    const whereClause = buildWhereClause(where);
-    const values = [...Object.values(data), ...Object.values(where)];
+    if (!options?.where) {
+      throw new Error("Where clause is required for update");
+    }
 
-    const query = `UPDATE ${tableName} SET ${setClause} ${whereClause}`;
-    const result = await sqliteDb.run(query, values);
+    if (!options?.data) {
+      throw new Error("Update data must be provided in the where clause");
+    }
 
-    return { affected: result.changes || 0 };
+    const { clause: whereClause, values: whereValues } = buildWhereClause(options);
+    const setClause = Object.keys(options.where).map((key) => `${key} = ?`).join(", ");
+    const values = [...Object.values(options.where), ...whereValues];
+
+    const query = `UPDATE ${tableName} SET ${setClause} ${whereClause} RETURNING *`;
+    const result = await sqliteDb.get(query, values);
+
+    return result as T;
   }
 
-  async function delete_(
+  async function delete_<T>(
     tableName: string,
-    where: Record<string, unknown>
-  ): Promise<{ affected: number }> {
+    options: QueryOptions<T>
+  ): Promise<T> {
     if (!connected) {
       await connect();
     }
-    const whereClause = buildWhereClause(where);
-    const values = Object.values(where);
+    if (!options?.where) {
+      throw new Error("Where clause is required for delete");
+    }
 
-    const query = `DELETE FROM ${tableName} ${whereClause}`;
-    const result = await sqliteDb.run(query, values);
+    const { clause, values } = buildWhereClause(options);
+    const query = `DELETE FROM ${tableName} ${clause} RETURNING *`;
+    const result = await sqliteDb.get(query, values);
 
-    return { affected: result.changes || 0 };
+    return result as T;
   }
 
-  function createModelProxy<T extends Record<string, any>>(modelName: string) {
+  function createModelProxy<T extends ModelType>(modelName: string) {
     return {
-      findFirst: (where: WhereClause<T>, options?: QueryOptions<T>) => 
-        findFirst<T>(modelName, where as Record<string, unknown>, options),
-      findMany: (where?: WhereClause<T>, options?: QueryOptions<T>) => 
-        findMany<T>(modelName, where as Record<string, unknown>, options),
-      create: (data: CreateData<T>, options?: { include?: Include<T> }) => 
-        create<T>(modelName, data as Record<string, unknown>, options),
-      update: (where: { id: number }, data: Partial<T>) => 
-        update(modelName, where, data as Record<string, unknown>),
-      delete: (where: { id: number }) => 
-        delete_(modelName, where)
+      findFirst: (options: QueryOptions<T>) => findFirst<T>(modelName, options),
+      findMany: (options?: QueryOptions<T>) => findMany<T>(modelName, options),
+      create: (options?: QueryOptions<T>) => create<T>(modelName, options),
+      update: (options: QueryOptions<T>) => update<T>(modelName, options),
+      delete: (options: QueryOptions<T>) => delete_<T>(modelName, options)
     };
   }
 
@@ -180,6 +228,7 @@ export function createSQLiteORM(): SQLiteORM {
   const orm: BaseORM = {
     db: sqliteDb,
     extensions,
+    connected,
     $connected: () => connected,
     $connect: connect,
     $disconnect: disconnect,
