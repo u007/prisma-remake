@@ -11,12 +11,12 @@ model User {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  name    String
-  email   String   @unique
-  password  String
-  posts   Post[]
-  profile Profile?
-  address Address[]
+  name     String
+  email    String    @unique
+  password String
+  posts    Post[]
+  profile  Profile?
+  address  Address[]
 
   @@index([name, email])
 }
@@ -42,11 +42,12 @@ model Post {
 
   title     String
   content   String?
-  keywords String?
-  published Boolean @default(false)
-  author    User?    @relation(fields: [authorId], references: [id], onUpdate: SetNull, onDelete: NoAction)
+  keywords  String?
+  published Boolean   @default(false)
+  author    User?     @relation(fields: [authorId], references: [id], onUpdate: SetNull, onDelete: NoAction)
   authorId  String?
   tags      Tag[]
+  PostTag   PostTag[]
 
   @@unique([title, authorId])
 }
@@ -58,7 +59,7 @@ model Profile {
 
   bio    String
   user   User   @relation(fields: [userId], references: [id], onUpdate: SetDefault, onDelete: Cascade)
-  userId String    @unique
+  userId String @unique
 }
 
 model Tag {
@@ -66,6 +67,16 @@ model Tag {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  name  String @unique
-  posts Post[]
+  name    String    @unique
+  posts   Post[]
+  PostTag PostTag[]
+}
+
+model PostTag {
+  postId String
+  tagId  String
+  post   Post   @relation(fields: [postId], references: [id], onUpdate: NoAction, onDelete: NoAction)
+  tag    Tag    @relation(fields: [tagId], references: [id], onUpdate: NoAction, onDelete: NoAction)
+
+  @@id([postId, tagId])
 }

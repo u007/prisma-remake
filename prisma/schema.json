@@ -253,6 +253,13 @@
         "isUnique": false,
         "isObjectId": false,
         "isEnum": false
+      },
+      {
+        "name": "PostTag",
+        "type": "PostTag[]",
+        "isUnique": false,
+        "isObjectId": false,
+        "isEnum": false
       }
     ],
     "uniqueConstraints": [
@@ -368,12 +375,80 @@
         "isUnique": false,
         "isObjectId": false,
         "isEnum": false
+      },
+      {
+        "name": "PostTag",
+        "type": "PostTag[]",
+        "isUnique": false,
+        "isObjectId": false,
+        "isEnum": false
       }
     ],
     "uniqueConstraints": [],
     "indexes": [],
     "idFields": [
       "id"
+    ]
+  },
+  {
+    "name": "PostTag",
+    "fields": [
+      {
+        "name": "postId",
+        "type": "String",
+        "isUnique": false,
+        "isObjectId": false,
+        "isEnum": false
+      },
+      {
+        "name": "tagId",
+        "type": "String",
+        "isUnique": false,
+        "isObjectId": false,
+        "isEnum": false
+      },
+      {
+        "name": "post",
+        "type": "Post",
+        "isUnique": false,
+        "isObjectId": false,
+        "isEnum": false,
+        "relation": {
+          "name": "Post",
+          "fields": [
+            "postId"
+          ],
+          "references": [
+            "id"
+          ],
+          "onDelete": "NoAction",
+          "onUpdate": "NoAction"
+        }
+      },
+      {
+        "name": "tag",
+        "type": "Tag",
+        "isUnique": false,
+        "isObjectId": false,
+        "isEnum": false,
+        "relation": {
+          "name": "Tag",
+          "fields": [
+            "tagId"
+          ],
+          "references": [
+            "id"
+          ],
+          "onDelete": "NoAction",
+          "onUpdate": "NoAction"
+        }
+      }
+    ],
+    "uniqueConstraints": [],
+    "indexes": [],
+    "idFields": [
+      "postId",
+      "tagId"
     ]
   }
 ]
