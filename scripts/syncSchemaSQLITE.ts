@@ -46,6 +46,7 @@ async function generateTableSchema(
 		if (recreate) {
 			if (DB_DEBUG) console.log("Dropping all tables...");
 			for (const tableSchema of schemaContent) {
+				console.log("dropping table", tableSchema.name);
 				await db.exec(`DROP TABLE IF EXISTS "${tableSchema.name}"`);
 			}
 			if (DB_DEBUG) console.log("All tables dropped successfully");
@@ -57,6 +58,8 @@ async function generateTableSchema(
 		);
 		if (DB_DEBUG) console.log(`Found ${tables.length} tables`);
 
+		const schemaTypes = schemaContent.map((s) => s.name);
+		console.log("tables", schemaTypes);
 		for (const tableSchema of schemaContent) {
 			if (DB_DEBUG) console.log(`Processing table: ${tableSchema.name}`);
 
@@ -72,13 +75,19 @@ async function generateTableSchema(
 					if (field.type === "String" && field.isId) {
 						fieldDef += " PRIMARY KEY";
 					}
+
+					if (schemaTypes.includes(field.type)) {
+						const fkName = `fk_${tableSchema.name}_${field.name}`;
+
+						fieldDef += ` CONSTRAINT "${fkName}" REFERENCES "${field.type}" ("${field.name}Id")`;
+					}
 					return fieldDef;
 				})
 				.join(", ");
+			console.log("createTableFields", createTableFields);
 			await db.exec(
 				`CREATE TABLE IF NOT EXISTS "${tableSchema.name}" (${createTableFields})`,
 			);
-
 			// Get current columns
 			const columnsResult = await db.all<ColumnInfo>(
 				`PRAGMA table_info(${tableSchema.name})`,
@@ -147,10 +156,36 @@ async function generateTableSchema(
 					await db.exec(indexDefinition);
 				}
 			}
+
+			// Handle foreign keys
+			for (const field of tableSchema.fields) {
+				// Check if field is a relation field (not array type)
+				if (field.type.endsWith("[]")) continue;
+
+				if (schemaTypes.includes(field.type)) {
+					const fkName = `fk_${tableSchema.name}_${field.name}`;
+					const referencedTable = field.type;
+					const fkDefinition = `FOREIGN KEY ("${field.name}Id") REFERENCES "${referencedTable}" ("id")`;
+
+					// Check if foreign key exists
+					const fkExists = await db.get(
+						`SELECT 1 FROM sqlite_master 
+						WHERE type='table' AND name=? AND sql LIKE '%${fkDefinition}%'`,
+						[tableSchema.name],
+					);
+
+					if (!fkExists) {
+						needRereate = true;
+						console.warn(`Foreign key ${fkName} requires table recreation`);
+					}
+				}
+			}
 		}
 	} finally {
-		if (needRereate) {
-			console.error("Cannot amend some schema, please pass in --force-reset to recrate database **WARNING DATA LOST**");
+		if (!recreate && needRereate) {
+			console.error(
+				"Cannot amend some schema, please pass in --force-reset to recrate database **WARNING DATA LOST**",
+			);
 		}
 		// if (DB_DEBUG) console.log("Closing database connection");
 		await db.close();
