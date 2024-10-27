@@ -1,7 +1,7 @@
 import { initTRPC, TRPCError } from '@trpc/server';
 import { z } from 'zod';
-import { orm } from '../db/orm.js';
-import { protectedProcedure } from '../server.js';
+import { orm } from '../db/orm';
+import { protectedProcedure } from '../server';
 
 const t = initTRPC.context<{ userId?: number }>().create();
 

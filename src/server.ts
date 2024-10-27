@@ -1,10 +1,10 @@
 import express from 'express';
 import { initTRPC, TRPCError } from '@trpc/server';
 import { createExpressMiddleware } from '@trpc/server/adapters/express';
-import { jwtRouter } from './routers/jwtRouter.js';
-import { postRouter } from './routers/postRouter.js';
-import { userRouter } from './routers/userRouter.js';
-import { setupDatabase } from '../prisma/setup.js';
+import { jwtRouter } from './routers/jwtRouter';
+import { postRouter } from './routers/postRouter';
+import { userRouter } from './routers/userRouter';
+import { setupDatabase } from '../prisma/setup';
 import jwt from 'jsonwebtoken';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';

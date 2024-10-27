@@ -1,26 +1,26 @@
-import { orm } from '../src/db/orm.js';
+import { orm } from '../src/db/orm';
 import fs from 'fs';
 import path from 'path';
-import { DatabaseDriver, getDriver } from './drivers/index.js';
+import { type DatabaseDriver, getDriver } from './drivers/index';
 
 async function getExistingSchema(driver: DatabaseDriver) {
   return await driver.getExistingSchema();
 }
 
-function parseSchema(schema: string): any {
-  const models: any = {};
-  let currentModel: any = null;
+function parseSchema(schema: string): Record<string, { columns: Array<{ name: string; type: string; notnull: boolean; pk: boolean; dflt_value: string | null }>; indexes: Array<{ name: string; unique: boolean; columns: string[] }> }> {
+  const models: Record<string, { columns: Array<{ name: string; type: string; notnull: boolean; pk: boolean; dflt_value: string | null }>; indexes: Array<{ name: string; unique: boolean; columns: string[] }> }> = {};
+  let currentModel: { name: string; columns: Array<{ name: string; type: string; notnull: boolean; pk: boolean; dflt_value: string | null }>; indexes: Array<{ name: string; unique: boolean; columns: string[] }>; driver: { mapDataType: (type: string) => string } } | null = null;
 
-  schema.split('\n').forEach((line) => {
-    line = line.trim();
-    if (line.startsWith('model')) {
-      const modelName = line.split(' ')[1];
-      currentModel = { columns: [], indexes: [] };
+  for (const line of schema.split('\n')) {
+    const trimmedLine = line.trim();
+    if (trimmedLine.startsWith('model')) {
+      const modelName = trimmedLine.split(' ')[1];
+      currentModel = { name: modelName, columns: [], indexes: [], driver: { mapDataType: (type: string) => type } };
       models[modelName] = currentModel;
-    } else if (currentModel && line.includes(' ')) {
-      const [name, ...rest] = line.split(' ');
+    } else if (currentModel && trimmedLine.includes(' ')) {
+      const [name, ...rest] = trimmedLine.split(' ');
       const type = rest[0];
-      const isUnique = line.includes('@unique');
+      const isUnique = trimmedLine.includes('@unique');
       const isOptional = type.endsWith('?');
       const isList = type.endsWith('[]');
       
@@ -41,8 +41,8 @@ function parseSchema(schema: string): any {
           columns: [name]
         });
       }
-    } else if (currentModel && line.startsWith('@@index')) {
-      const indexMatch = line.match(/\[(.*?)\]/);
+    } else if (currentModel && trimmedLine.startsWith('@@index')) {
+      const indexMatch = trimmedLine.match(/\[(.*?)\]/);
       if (indexMatch) {
         const columns = indexMatch[1].split(',').map(c => c.trim());
         currentModel.indexes.push({
@@ -51,8 +51,8 @@ function parseSchema(schema: string): any {
           columns
         });
       }
-    } else if (currentModel && line.startsWith('@@unique')) {
-      const uniqueMatch = line.match(/\[(.*?)\]/);
+    } else if (currentModel && trimmedLine.startsWith('@@unique')) {
+      const uniqueMatch = trimmedLine.match(/\[(.*?)\]/);
       if (uniqueMatch) {
         const columns = uniqueMatch[1].split(',').map(c => c.trim());
         currentModel.indexes.push({
@@ -62,24 +62,21 @@ function parseSchema(schema: string): any {
         });
       }
     }
-  });
+  }
 
   return models;
-}
-
-function generateDesiredSchema(driver: DatabaseDriver): any {
+}function generateDesiredSchema(driver: DatabaseDriver): any {
   const schemaPath = path.join(process.cwd(), 'prisma', 'schema.prisma');
   const schemaContent = fs.readFileSync(schemaPath, 'utf-8');
   const parsedSchema = parseSchema(schemaContent);
   
   // Inject the driver into each model for type mapping
-  Object.values(parsedSchema).forEach((model: any) => {
+  for (const model of Object.values(parsedSchema)) {
     model.driver = driver;
-  });
+  }
 
   return parsedSchema;
 }
-
 async function createOrUpdateTable(driver: DatabaseDriver, tableName: string, tableSchema: any) {
   await driver.createOrUpdateTable(tableName, tableSchema);
 }

@@ -1,4 +1,4 @@
-import { DatabaseDriver } from './index.js';
+import type { DatabaseDriver } from './index';
 
 export class SQLiteDriver implements DatabaseDriver {
   private db: any;
@@ -8,10 +8,10 @@ export class SQLiteDriver implements DatabaseDriver {
     console.log('SQLiteDriver initialized');
   }
 
-  async getExistingSchema(): Promise<any> {
+  async getExistingSchema(): Promise<Record<string, { columns: Array<{ name: string; type: string; notnull: boolean; dflt_value: string | null; pk: boolean }>; indexes: Array<{ name: string; unique: boolean; columns: string[] }> }>> {
     console.log('Getting existing schema...');
     const tables = await this.db.all("SELECT name FROM sqlite_master WHERE type='table'");
-    const schema: any = {};
+    const schema: Record<string, { columns: Array<{ name: string; type: string; notnull: boolean; dflt_value: string | null; pk: boolean }>; indexes: Array<{ name: string; unique: boolean; columns: string[] }> }> = {};
 
     for (const table of tables) {
       const tableName = table.name;
@@ -20,19 +20,19 @@ export class SQLiteDriver implements DatabaseDriver {
       const indexes = await this.db.all(`PRAGMA index_list(${tableName})`);
       console.log(`Columns for ${tableName}:`, columns);
       schema[tableName] = {
-        columns: columns.map((column: any) => ({
+        columns: columns.map((column: { name: string; type: string; notnull: number; dflt_value: string | null; pk: number }) => ({
           name: column.name,
           type: column.type || '',
           notnull: column.notnull === 1,
           dflt_value: column.dflt_value,
           pk: column.pk === 1
         })),
-        indexes: await Promise.all(indexes.map(async (index: any) => {
+        indexes: await Promise.all(indexes.map(async (index: { name: string; unique: number }) => {
           const indexInfo = await this.db.all(`PRAGMA index_info(${index.name})`);
           return {
             name: index.name,
             unique: index.unique === 1,
-            columns: indexInfo.map((col: any) => col.name)
+            columns: indexInfo.map((col: { name: string }) => col.name)
           };
         }))
       };
@@ -41,7 +41,6 @@ export class SQLiteDriver implements DatabaseDriver {
     console.log('Existing schema:', JSON.stringify(schema, null, 2));
     return schema;
   }
-
   async createOrUpdateTable(tableName: string, tableSchema: any): Promise<void> {
     console.log(`Creating or updating table: ${tableName}`);
     console.log('Table schema:', JSON.stringify(tableSchema, null, 2));
@@ -101,16 +100,17 @@ export class SQLiteDriver implements DatabaseDriver {
 
   mapDataType(type: string): string {
     const mappedType = (() => {
-      switch (type) {
-        case 'Int':
+      switch (type.toLowerCase()) {
+        case 'int':
+        case 'integer':
           return 'INTEGER';
-        case 'String':
+        case 'string':
           return 'TEXT';
-        case 'Boolean':
+        case 'boolean':
           return 'INTEGER';
-        case 'DateTime':
+        case 'datetime':
           return 'TEXT';
-        case 'Float':
+        case 'float':
           return 'REAL';
         default:
           return 'TEXT';

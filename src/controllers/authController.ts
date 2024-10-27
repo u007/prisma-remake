@@ -3,6 +3,7 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { z } from 'zod';
 import { TRPCError } from '@trpc/server';
+import { hash, compare } from 'bun';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
 
@@ -16,7 +17,7 @@ export const authController = {
       });
     }
 
-    const hashedPassword = await bcrypt.hash(input.password, 10);
+    const hashedPassword = await hash(input.password, 10);
     const user = await orm.User.create({
       name: input.name,
       email: input.email,
@@ -36,7 +37,7 @@ export const authController = {
       });
     }
 
-    const isPasswordValid = await bcrypt.compare(input.password, user.password);
+    const isPasswordValid = await compare(input.password, user.password);
     if (!isPasswordValid) {
       throw new TRPCError({
         code: 'UNAUTHORIZED',
