@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { promisify } from "node:util";
 import sqlite3 from "sqlite3";
-import { open } from "sqlite";
+import { open, type Database } from "sqlite";
 import { dumpSchema } from "./dumpSchema";
 import {
 	parsePrismaSchemaJsons,
@@ -17,6 +17,9 @@ interface ColumnInfo {
 	name: string;
 	type: string;
 	notnull: number;
+	dflt_value: string | null;
+	pk: number;
+	cid?: number;
 }
 
 interface IndexInfo {
@@ -47,16 +50,21 @@ async function initializeDatabase() {
 
 	if (DB_DEBUG) console.log(`Opening database at ${url}`);
 
-	return await open({
+	const db = await open({
 		filename: url,
 		driver: sqlite3.Database,
 	});
+	// does not work with bun
+	// if (DB_DEBUG) {
+	// 	db.on("trace", (sql: any) => {
+	// 		console.log("[SQLite Query]:", sql);
+	// 	});
+	// }
+
+	return db;
 }
 
-async function dropAllTables(
-	db: any,
-	schemas: SchemaJsonTableType[],
-) {
+async function dropAllTables(db: Database, schemas: SchemaJsonTableType[]) {
 	if (DB_DEBUG) console.log("Dropping all tables...");
 	if (!promptYesToAll) {
 		const answer = prompt("Are you sure you want to drop all tables? (y/n/A) ");
@@ -81,7 +89,7 @@ async function syncTableSchema(
 	recreate = false,
 ) {
 	const db = await initializeDatabase();
-	const schemas = await parsePrismaSchemaJsons(schemaPath, enumSchemaPath);
+	const schemas = parsePrismaSchemaJsons(schemaPath, enumSchemaPath);
 
 	if (recreate) {
 		await dropAllTables(db, schemas.schema);
@@ -91,14 +99,14 @@ async function syncTableSchema(
 
 	for (const tableSchema of schemas.schema) {
 		if (!existingTables.some((t) => t.name === tableSchema.name)) {
-			await createNewTable(db, tableSchema, schemas.enums);
+			createNewTable(db, tableSchema, schemas.enums);
 		} else {
 			await updateExistingTable(db, tableSchema, schemas.enums);
 		}
 	}
 }
 
-async function getExistingTables(db: any) {
+async function getExistingTables(db: Database) {
 	const tables = await db.all(
 		"SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'",
 	);
@@ -108,35 +116,57 @@ async function getExistingTables(db: any) {
 	return tables;
 }
 
-function createNewTable(db, tableSchema: SchemaJsonTableType, enums: SchemaJsonEnumType[]) {
+function generateCreateTableSQL(
+	tableSchema: SchemaJsonTableType,
+	enums: SchemaJsonEnumType[],
+) {
 	const fields = buildTableFields(tableSchema, enums);
 	const constraints = buildTableConstraints(tableSchema);
 	const primaryKey = buildPrimaryKeyDefinition(tableSchema);
-	const sql = buildCreateTableSQL(tableSchema.name, fields, constraints, primaryKey)
+	return `CREATE TABLE IF NOT EXISTS "${tableSchema.name}" (${fields}${constraints ? `, ${constraints}` : ""}${primaryKey ? `, ${primaryKey}` : ""})`;
+}
+
+async function createNewTable(
+	db: Database,
+	tableSchema: SchemaJsonTableType,
+	enums: SchemaJsonEnumType[],
+) {
+	const sql = generateCreateTableSQL(tableSchema, enums);
 	if (DB_DEBUG) console.log(sql);
-	return db.exec(
-		sql
-	);
+	return await db.exec(sql);
+}
+
+function buildTableFields(
+	tableSchema: SchemaJsonTableType,
+	enums: SchemaJsonEnumType[],
+) {
+	const fields = tableSchema.fields
+		.filter((field) => !field.isRelation)
+		.map((field) => {
+			return buildFieldDefinition(field, enums);
+		});
+	return fields.join(", ");
 }
 
 function updateExistingTable(
-	db: any,
+	db: Database,
 	tableSchema: SchemaJsonTableType,
 	enumSchema: SchemaJsonEnumType[],
 ) {
-	console.log('updating table', tableSchema.name);
+	console.log("updating table", tableSchema.name);
 	return Promise.all([
 		updateColumns(db, tableSchema, enumSchema),
 		updateIndexes(db, tableSchema),
-		updateForeignKeys(db, tableSchema),
+		updateForeignKeys(db, tableSchema, enumSchema),
 		updatePrimaryKey(db, tableSchema),
 	]);
 }
 
-async function updatePrimaryKey(db: any, tableSchema: SchemaJsonTableType) {
-	const currentColumns = await db.all(
-		`PRAGMA table_info(${tableSchema.name})`,
-	) as ColumnInfo[];
+async function updatePrimaryKey(
+	db: Database,
+	tableSchema: SchemaJsonTableType,
+) {
+	const currentColumns = await db.all(`PRAGMA table_info(${tableSchema.name})`);
 
 	const existingIdFields = currentColumns
 		.filter((col: ColumnInfo) => col.name === "id")
@@ -154,14 +184,14 @@ async function updatePrimaryKey(db: any, tableSchema: SchemaJsonTableType) {
 			await alterTableAddPrimaryKey(db, tableSchema.name, tableSchema.idFields);
 		}
 	} else if (tableSchema.idFields?.length) {
-		await alterTableAddPrimaryKey(
-			db,
-			tableSchema.name,
-			tableSchema.idFields,
-		);
+		await alterTableAddPrimaryKey(db, tableSchema.name, tableSchema.idFields);
 	}
 }
-async function updateForeignKeys(db: any, tableSchema: SchemaJsonTableType) {
+async function updateForeignKeys(
+	db: Database,
+	tableSchema: SchemaJsonTableType,
+	enums: SchemaJsonEnumType[],
+) {
 	for (const field of tableSchema.fields) {
 		if (field.isArray || !field.relation) continue;
 
@@ -182,23 +212,21 @@ async function updateForeignKeys(db: any, tableSchema: SchemaJsonTableType) {
 
 		if (!fkExists?.count) {
 			console.warn(
-				`Foreign key ${fkName} requires table recreation (${field.relation.fields[0]} -> ${referencedTable}.${field.relation.references[0]})`,
+				`Foreign key ${fkName} requires table recreation (${field.relation.fields.join(", ")} -> ${referencedTable}.${field.relation.references.join(", ")})`,
 			);
 
-			await addForeignKeyConstraint(
-				db,
-				tableSchema.name,
-				field.relation.fields.join(", "),
-				referencedTable,
-				field.relation.references.join(", "),
-			);
+			await addForeignKeyConstraint(db, tableSchema, enums);
 
-			if (DB_DEBUG) console.log(`Added foreign key: ${fkName}`);
+			if (DB_DEBUG)
+				console.log(
+					`Recreated table ${tableSchema.name} for foreign key: ${fkName}`,
+				);
+			return; // already recreated
 		}
 	}
 }
 
-function buildPrimaryKeyDefinition(tableSchema: any): string {
+function buildPrimaryKeyDefinition(tableSchema: SchemaJsonTableType): string {
 	if (!tableSchema.idFields?.length) {
 		return "";
 	}
@@ -206,11 +234,15 @@ function buildPrimaryKeyDefinition(tableSchema: any): string {
 	return `PRIMARY KEY (${tableSchema.idFields.join(", ")})`;
 }
 
-async function updateColumns(db: any, tableSchema: SchemaJsonTableType, enums: SchemaJsonEnumType[]) {
-	const currentColumns = await db.all(
-		`PRAGMA table_info(${tableSchema.name})`,
-	) as ColumnInfo[];
-
+async function updateColumns(
+	db: Database,
+	tableSchema: SchemaJsonTableType,
+	enums: SchemaJsonEnumType[],
+) {
+	const currentColumns: ColumnInfo[] = (await db.all(
+		`PRAGMA table_info("${tableSchema.name}")`,
+	)) as ColumnInfo[];
+	// console.log('currentcols', currentColumns);
 	for (const field of tableSchema.fields) {
 		if (field.isRelation) continue;
 
@@ -218,20 +250,17 @@ async function updateColumns(db: any, tableSchema: SchemaJsonTableType, enums: S
 			(col: ColumnInfo) => col.name === field.name,
 		);
 
-		const sqliteType = getSQLiteType(
-			field.type,
-			field.isEnum,
-			enums,
-		);
+		const sqliteType = getSQLiteType(field.type, field.isEnum, enums);
 
-		if (! currentColumn) {
-			if (DB_DEBUG) console.log(`Adding missing column: ${tableSchema.name} ${field.name}`);
+		if (!currentColumn) {
+			if (DB_DEBUG)
+				console.log(`Adding missing column: ${tableSchema.name} ${field.name}`);
 			await db.exec(
 				`ALTER TABLE "${tableSchema.name}" ADD COLUMN "${field.name}" ${sqliteType}`,
 			);
 			continue;
 		}
-		
+
 		if (currentColumn.type !== sqliteType) {
 			if (DB_DEBUG) {
 				console.log(
@@ -246,18 +275,15 @@ async function updateColumns(db: any, tableSchema: SchemaJsonTableType, enums: S
 				throw new Error("Table recreation required");
 			}
 
-			await db.exec(
-				`ALTER TABLE "${tableSchema.name}" ALTER COLUMN "${field.name}" SET DATA TYPE ${sqliteType}`,
+			await alterColumnType(
+				db,
+				tableSchema.name,
+				field,
+				currentColumn.type,
+				enums,
 			);
 		}
 	}
-}
-// Helper functions for table components
-function buildTableFields(tableSchema: SchemaJsonTableType, enums: SchemaJsonEnumType[]) {
-	return tableSchema.fields
-		.filter((field) => !field.isRelation)
-		.map((field) => buildFieldDefinition(field, enums))
-		.join(", ");
 }
 
 function buildTableConstraints(tableSchema: SchemaJsonTableType) {
@@ -282,17 +308,13 @@ function buildCreateTableSQL(
 }
 
 async function alterColumnType(
-	db: any,
+	db: Database,
 	tableName: string,
 	field: SchemaJsonFieldType,
 	existingType: string,
 	enums: SchemaJsonEnumType[],
 ) {
-	const sqliteType = getSQLiteType(
-		field.type,
-		field.isEnum,
-		enums,
-	);
+	const sqliteType = getSQLiteType(field.type, field.isEnum, enums);
 
 	if (DB_DEBUG) {
 		console.log(`Altering column type: ${field.name} to ${sqliteType}`);
@@ -308,22 +330,23 @@ async function alterColumnType(
 	);
 }
 
-function needsTypeChange(currentColumn: ColumnInfo, field: SchemaJsonFieldType, enums: SchemaJsonEnumType[]): boolean {
-	const sqliteType = getSQLiteType(
-		field.type,
-		field.isEnum,
-		enums,
-	);
+function needsTypeChange(
+	currentColumn: ColumnInfo,
+	field: SchemaJsonFieldType,
+	enums: SchemaJsonEnumType[],
+): boolean {
+	const sqliteType = getSQLiteType(field.type, field.isEnum, enums);
 
 	return currentColumn.type !== sqliteType;
 }
 
-async function addColumn(db: any, tableName: string, field: SchemaJsonFieldType, enums: SchemaJsonEnumType[]) {
-	const sqliteType = getSQLiteType(
-		field.type,
-		field.isEnum,
-		enums,
-	);
+async function addColumn(
+	db: Database,
+	tableName: string,
+	field: SchemaJsonFieldType,
+	enums: SchemaJsonEnumType[],
+) {
+	const sqliteType = getSQLiteType(field.type, field.isEnum, enums);
 
 	if (DB_DEBUG) console.log(`Adding column: ${field.name}`);
 
@@ -333,13 +356,10 @@ async function addColumn(db: any, tableName: string, field: SchemaJsonFieldType,
 }
 
 // Index management
-async function updateIndexes(
-	db: any,
-	tableSchema: SchemaJsonTableType,
-) {
-	const currentIndexes = await db.all(
+async function updateIndexes(db: Database, tableSchema: SchemaJsonTableType) {
+	const currentIndexes = (await db.all(
 		`PRAGMA index_list(${tableSchema.name})`,
-	) as IndexInfo[];
+	)) as IndexInfo[];
 	for (const index of tableSchema.indexes) {
 		const indexName = buildIndexName(tableSchema.name, index);
 		await recreateIndexIfNeeded(
@@ -357,15 +377,17 @@ function buildIndexName(tableName: string, index: SchemaJsonIndexType): string {
 }
 
 async function recreateIndexIfNeeded(
-	db: any,
+	db: Database,
 	indexName: string,
 	tableSchema: SchemaJsonTableType,
 	index: SchemaJsonIndexType,
 	currentIndexes: IndexInfo[],
 	uniques: SchemaJsonUniqueConstraintType[],
 ) {
-	console.log('checking uniques', tableSchema.name, uniques)
-	const foundUnique = uniques.find((unique) =>	unique.fields.every((f: string) => index.fields.includes(f)))
+	// console.log('checking uniques', tableSchema.name, uniques)
+	const foundUnique = uniques.find((unique) =>
+		unique.fields.every((f: string) => index.fields.includes(f)),
+	);
 	const indexDefinition = `CREATE ${foundUnique ? "UNIQUE" : ""} INDEX "${indexName}" 
         ON "${tableSchema.name}" (${index.fields.map((f: string) => `"${f}"`).join(", ")})`;
 
@@ -376,12 +398,11 @@ async function recreateIndexIfNeeded(
 	await db.exec(indexDefinition);
 }
 
-function buildFieldDefinition(field: SchemaJsonFieldType, enums: SchemaJsonEnumType[]): string {
-	const sqliteType = getSQLiteType(
-		field.type,
-		field.isEnum,
-		enums,
-	);
+function buildFieldDefinition(
+	field: SchemaJsonFieldType,
+	enums: SchemaJsonEnumType[],
+): string {
+	const sqliteType = getSQLiteType(field.type, field.isEnum, enums);
 	const fieldDef = `"${field.name}" ${sqliteType}`;
 	return fieldDef;
 }
@@ -457,10 +478,10 @@ function canConvertType(fromType: string, toType: string): boolean {
 }
 
 async function alterTableAddPrimaryKey(
-	db: any,
+	db: Database,
 	tableName: string,
 	columnNames: string[],
-): Promise<string> {
+): Promise<void> {
 	const tempTableName = `${tableName}_temp`;
 
 	const countResult = await db.get(
@@ -479,7 +500,7 @@ async function alterTableAddPrimaryKey(
 		if (answer?.toLowerCase() === "a") {
 			promptYesToAll = true;
 		} else if (answer?.toLowerCase() !== "y") {
-			return "";
+			return;
 		}
 	}
 
@@ -522,16 +543,15 @@ async function alterTableAddPrimaryKey(
 	`;
 
 	console.log("changing/adding primary field", tableName, sql);
-	return await db.exec(sql);
+	await db.exec(sql);
 }
 
 async function alterTableAddForeignKey(
-	tableName: string,
-	columnName: string,
-	referenceTable: string,
-	referenceColumn: string,
-	db: any,
+	db: Database,
+	schema: SchemaJsonTableType,
+	enums: SchemaJsonEnumType[],
 ): Promise<string> {
+	const tableName = schema.name;
 	const tempTableName = `${tableName}_temp`;
 
 	// Get existing table schema
@@ -546,6 +566,7 @@ async function alterTableAddForeignKey(
 		`"${tempTableName}"`,
 	);
 
+	const newTableSQL = generateCreateTableSQL(schema, enums);
 	return `
 		PRAGMA foreign_keys=off;
 		
@@ -561,8 +582,7 @@ async function alterTableAddForeignKey(
 		DROP TABLE ${tableName};
 		
 		-- Create new table with foreign key
-		${tableInfo.sql},
-		FOREIGN KEY (${columnName}) REFERENCES ${referenceTable}(${referenceColumn});
+		${newTableSQL};
 		
 		-- Copy data back
 		INSERT INTO ${tableName} SELECT * FROM ${tempTableName};
@@ -574,12 +594,11 @@ async function alterTableAddForeignKey(
 	`;
 }
 async function addForeignKeyConstraint(
-	db: any,
-	tableName: string,
-	columnName: string,
-	referenceTable: string,
-	referenceColumn: string,
+	db: Database,
+	schema: SchemaJsonTableType,
+	enums: SchemaJsonEnumType[],
 ): Promise<void> {
+	const tableName = schema.name;
 	// Check if table has less than 10000 records
 	const countResult = await db.get(
 		`SELECT COUNT(*) as count FROM ${tableName}`,
@@ -601,13 +620,7 @@ async function addForeignKeyConstraint(
 		}
 	}
 
-	const sql = await alterTableAddForeignKey(
-		tableName,
-		columnName,
-		referenceTable,
-		referenceColumn,
-		db,
-	);
+	const sql = await alterTableAddForeignKey(db, schema, enums);
 
 	try {
 		await db.exec(sql);
@@ -620,7 +633,7 @@ async function addForeignKeyConstraint(
 export default syncTableSchema;
 
 if (require.main === module) {
-	await dumpSchema();
+	dumpSchema();
 	const schemaPath = path.join(process.cwd(), "prisma", "schema.json");
 	const enumSchemaPath = path.join(process.cwd(), "prisma", "schema.enum.json");
 	const recreate = process.argv.includes("--force-reset");
