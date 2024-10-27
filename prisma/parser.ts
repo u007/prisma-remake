@@ -16,6 +16,9 @@ export const parsePrismaSchemaJsons = (
         field.type = field.type.replace('[]', '').replace('?', '');
 
         field.isRelation = !field.isEnum && schemaTypes.includes(field.type);
+        if (field.relation) {
+          field.relation.name = field.relation.name.replace('[]', '').replace('?', '');
+        }
       }
     }
   }

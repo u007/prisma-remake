@@ -43,7 +43,7 @@ async function generateTableSchema(
 		driver: sqlite3.Database,
 	});
 
-	let needRereate = !recreate;
+	let needRereate = false;
 	try {
 		if (DB_DEBUG)
 			console.log(`Reading schema files: ${schemaPath}, ${enumSchemaPath}`);
@@ -177,7 +177,7 @@ async function generateTableSchema(
 
 					// check if column can be casted
 					if (!canConvertType(currentColumn.type, sqliteType)) {
-						console.warn(
+						console.error(
 							`Column type change for ${field.name} requires table recreation`,
 						);
 						needRereate = true;
@@ -232,7 +232,7 @@ async function generateTableSchema(
 							...field.relation.fields,
 						],
 					);
-
+					// console.log("fkExists", fkExists, field.relation);
 					if (!fkExists?.count) {
 						// needRereate = true;
 						console.warn(
@@ -359,7 +359,6 @@ async function alterTableAddForeignKey(
 		DROP TABLE ${tableName};
 		
 		-- Create new table with foreign key
-		CREATE TABLE ${tableName} AS 
 		${tableInfo.sql},
 		FOREIGN KEY (${columnName}) REFERENCES ${referenceTable}(${referenceColumn});
 		
