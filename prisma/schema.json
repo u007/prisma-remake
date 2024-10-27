@@ -38,6 +38,13 @@
         "isEnum": false
       },
       {
+        "name": "password",
+        "type": "String",
+        "isUnique": false,
+        "isObjectId": false,
+        "isEnum": false
+      },
+      {
         "name": "posts",
         "type": "Post[]",
         "isUnique": false,
