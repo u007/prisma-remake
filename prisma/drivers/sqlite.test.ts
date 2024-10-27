@@ -52,9 +52,9 @@ describe('SQLiteDriver', () => {
   it('should create or update table', async () => {
     const tableSchema = {
       columns: [
-        { name: 'id', type: 'INTEGER', notnull: 1, pk: 1 },
-        { name: 'email', type: 'TEXT', notnull: 1 },
-        { name: 'created_at', type: 'DATETIME', notnull: 1, dflt_value: 'CURRENT_TIMESTAMP' }
+        { name: 'id', type: 'INTEGER', notnull: true, pk: true },
+        { name: 'email', type: 'TEXT', notnull: true },
+        { name: 'created_at', type: 'DATETIME', notnull: true, dflt_value: 'CURRENT_TIMESTAMP' }
       ],
       indexes: [
         { name: 'email_idx', unique: true, columns: ['email'] }

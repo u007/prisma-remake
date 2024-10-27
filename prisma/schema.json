@@ -1,0 +1,332 @@
+[
+  {
+    "name": "User",
+    "fields": [
+      {
+        "name": "id",
+        "type": "String",
+        "isUnique": false,
+        "isObjectId": false,
+        "isEnum": false
+      },
+      {
+        "name": "createdAt",
+        "type": "DateTime",
+        "isUnique": false,
+        "isObjectId": false,
+        "isEnum": false
+      },
+      {
+        "name": "updatedAt",
+        "type": "DateTime",
+        "isUnique": false,
+        "isObjectId": false,
+        "isEnum": false
+      },
+      {
+        "name": "name",
+        "type": "String",
+        "isUnique": false,
+        "isObjectId": false,
+        "isEnum": false
+      },
+      {
+        "name": "email",
+        "type": "String",
+        "isUnique": true,
+        "isObjectId": false,
+        "isEnum": false
+      },
+      {
+        "name": "posts",
+        "type": "Post[]",
+        "isUnique": false,
+        "isObjectId": false,
+        "isEnum": false
+      },
+      {
+        "name": "profile",
+        "type": "Profile?",
+        "isUnique": false,
+        "isObjectId": false,
+        "isEnum": false
+      },
+      {
+        "name": "address",
+        "type": "Address[]",
+        "isUnique": false,
+        "isObjectId": false,
+        "isEnum": false
+      }
+    ],
+    "uniqueConstraints": [],
+    "indexes": [
+      {
+        "fields": [
+          "name",
+          "email"
+        ]
+      }
+    ],
+    "idFields": [
+      "id"
+    ]
+  },
+  {
+    "name": "Address",
+    "fields": [
+      {
+        "name": "id",
+        "type": "String",
+        "isUnique": false,
+        "isObjectId": false,
+        "isEnum": false
+      },
+      {
+        "name": "createdAt",
+        "type": "DateTime",
+        "isUnique": false,
+        "isObjectId": false,
+        "isEnum": false
+      },
+      {
+        "name": "updatedAt",
+        "type": "DateTime",
+        "isUnique": false,
+        "isObjectId": false,
+        "isEnum": false
+      },
+      {
+        "name": "street",
+        "type": "String",
+        "isUnique": false,
+        "isObjectId": false,
+        "isEnum": false
+      },
+      {
+        "name": "city",
+        "type": "String",
+        "isUnique": false,
+        "isObjectId": false,
+        "isEnum": false
+      },
+      {
+        "name": "state",
+        "type": "String",
+        "isUnique": false,
+        "isObjectId": false,
+        "isEnum": false
+      },
+      {
+        "name": "country",
+        "type": "String",
+        "isUnique": false,
+        "isObjectId": false,
+        "isEnum": false
+      },
+      {
+        "name": "zipCode",
+        "type": "String",
+        "isUnique": false,
+        "isObjectId": false,
+        "isEnum": false
+      },
+      {
+        "name": "userId",
+        "type": "String",
+        "isUnique": false,
+        "isObjectId": false,
+        "isEnum": false
+      },
+      {
+        "name": "user",
+        "type": "User",
+        "isUnique": false,
+        "isObjectId": false,
+        "isEnum": false
+      }
+    ],
+    "uniqueConstraints": [],
+    "indexes": [],
+    "idFields": [
+      "id"
+    ]
+  },
+  {
+    "name": "Post",
+    "fields": [
+      {
+        "name": "id",
+        "type": "String",
+        "isUnique": false,
+        "isObjectId": false,
+        "isEnum": false
+      },
+      {
+        "name": "createdAt",
+        "type": "DateTime",
+        "isUnique": false,
+        "isObjectId": false,
+        "isEnum": false
+      },
+      {
+        "name": "updatedAt",
+        "type": "DateTime",
+        "isUnique": false,
+        "isObjectId": false,
+        "isEnum": false
+      },
+      {
+        "name": "title",
+        "type": "String",
+        "isUnique": false,
+        "isObjectId": false,
+        "isEnum": false
+      },
+      {
+        "name": "content",
+        "type": "String?",
+        "isUnique": false,
+        "isObjectId": false,
+        "isEnum": false
+      },
+      {
+        "name": "published",
+        "type": "Boolean",
+        "isUnique": false,
+        "isObjectId": false,
+        "isEnum": false
+      },
+      {
+        "name": "author",
+        "type": "User",
+        "isUnique": false,
+        "isObjectId": false,
+        "isEnum": false
+      },
+      {
+        "name": "authorId",
+        "type": "String",
+        "isUnique": false,
+        "isObjectId": false,
+        "isEnum": false
+      },
+      {
+        "name": "tags",
+        "type": "Tag[]",
+        "isUnique": false,
+        "isObjectId": false,
+        "isEnum": false
+      }
+    ],
+    "uniqueConstraints": [
+      {
+        "fields": [
+          "title",
+          "authorId"
+        ]
+      }
+    ],
+    "indexes": [],
+    "idFields": [
+      "id"
+    ]
+  },
+  {
+    "name": "Profile",
+    "fields": [
+      {
+        "name": "id",
+        "type": "String",
+        "isUnique": false,
+        "isObjectId": false,
+        "isEnum": false
+      },
+      {
+        "name": "createdAt",
+        "type": "DateTime",
+        "isUnique": false,
+        "isObjectId": false,
+        "isEnum": false
+      },
+      {
+        "name": "updatedAt",
+        "type": "DateTime",
+        "isUnique": false,
+        "isObjectId": false,
+        "isEnum": false
+      },
+      {
+        "name": "bio",
+        "type": "String",
+        "isUnique": false,
+        "isObjectId": false,
+        "isEnum": false
+      },
+      {
+        "name": "user",
+        "type": "User",
+        "isUnique": false,
+        "isObjectId": false,
+        "isEnum": false
+      },
+      {
+        "name": "userId",
+        "type": "String",
+        "isUnique": true,
+        "isObjectId": false,
+        "isEnum": false
+      }
+    ],
+    "uniqueConstraints": [],
+    "indexes": [],
+    "idFields": [
+      "id"
+    ]
+  },
+  {
+    "name": "Tag",
+    "fields": [
+      {
+        "name": "id",
+        "type": "String",
+        "isUnique": false,
+        "isObjectId": false,
+        "isEnum": false
+      },
+      {
+        "name": "createdAt",
+        "type": "DateTime",
+        "isUnique": false,
+        "isObjectId": false,
+        "isEnum": false
+      },
+      {
+        "name": "updatedAt",
+        "type": "DateTime",
+        "isUnique": false,
+        "isObjectId": false,
+        "isEnum": false
+      },
+      {
+        "name": "name",
+        "type": "String",
+        "isUnique": true,
+        "isObjectId": false,
+        "isEnum": false
+      },
+      {
+        "name": "posts",
+        "type": "Post[]",
+        "isUnique": false,
+        "isObjectId": false,
+        "isEnum": false
+      }
+    ],
+    "uniqueConstraints": [],
+    "indexes": [],
+    "idFields": [
+      "id"
+    ]
+  }
+]
