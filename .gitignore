@@ -97,3 +97,4 @@ public
 
 # VS Code settings
 .vscode/
+*.sqlite-*
