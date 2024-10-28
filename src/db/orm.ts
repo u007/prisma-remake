@@ -10,13 +10,13 @@ import type {
   Profile,
   Tag
 } from "./generatedTypes";
-import { createSQLiteORM, type SQLiteORM } from "@prisma/orm_sqlite";
+import { createORM, type DrizzleORM } from "@prisma/orm_drizzle";
 type ModelName = "User" | "Address" | "Post" | "Profile" | "Tag";
 type ModelType = User | Address | Post | Profile | Tag;
 
 export const prisma = (() => {
-  const orm = new Proxy(createSQLiteORM(), {
-    get: (target: SQLiteORM, prop: string | symbol) => {
+  const orm = new Proxy(createORM(), {
+    get: (target: DrizzleORM, prop: string | symbol) => {
       if (typeof prop === "string" && prop in target.extensions) {
         const extension = target.extensions[prop];
         return extension.bind(target);
